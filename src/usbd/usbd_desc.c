@@ -171,7 +171,7 @@ USBD_DescriptorsTypeDef FS_Desc = {USBD_FS_DeviceDescriptor,
 #pragma data_alignment = 4
 #endif /* defined ( __ICCARM__ ) */
 /** USB standard device descriptor. */
-__weak __ALIGN_BEGIN uint8_t USBD_FS_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
+__ALIGN_BEGIN uint8_t USBD_FS_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
     0x12,                 /*bLength */
     USB_DESC_TYPE_DEVICE, /*bDescriptorType*/
     0x00,                 /*bcdUSB */
@@ -240,7 +240,7 @@ USBD_DescriptorsTypeDef HS_Desc = {USBD_HS_DeviceDescriptor,
 #pragma data_alignment = 4
 #endif /* defined ( __ICCARM__ ) */
 /** USB standard device descriptor. */
-__weak __ALIGN_BEGIN uint8_t USBD_HS_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
+__ALIGN_BEGIN uint8_t USBD_HS_DeviceDesc[USB_LEN_DEV_DESC] __ALIGN_END = {
     0x12,                 /*bLength */
     USB_DESC_TYPE_DEVICE, /*bDescriptorType*/
     0x00,                 /*bcdUSB */
