@@ -2,7 +2,8 @@
 
 CHIPSET ?= stm32h7x
 
-TARGET_BIN=$(TARGET).bin
+TARGET_SRAM_BIN=$(TARGET).sram_bin
+TARGET_ITCM_BIN=$(TARGET).itcm_bin
 TARGET_ELF=$(TARGET).elf
 
 # If you have the arm-none-eabi- toolchain located in a particular place, but not installed for the entire system, add the path here:
@@ -81,7 +82,8 @@ CP = $(PREFIX)objcopy
 SZ = $(PREFIX)size
 endif
 HEX = $(CP) -O ihex
-BIN = $(CP) -O binary -S
+SRAM_BIN = $(CP) -O binary  --remove-section=.itcmram_text -S
+ITCM_BIN = $(CP) -O binary --only-section=.itcmram_text  -S
 
 #######################################
 # CFLAGS
@@ -265,7 +267,7 @@ LDFLAGS ?=
 LDFLAGS += $(MCU) --specs=nano.specs --specs=nosys.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS) -Wl,-Map=$(BUILD_DIR)/$(TARGET).map,--cref -Wl,--gc-sections -Wl,--print-memory-usage
 
 # default action: build all
-all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
+all: $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).sram_bin $(BUILD_DIR)/$(TARGET).itcm_bin
 
 #######################################
 # build the application
@@ -294,8 +296,11 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 	$(HEX) $< $@
 
-$(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
-	$(BIN) $< $@
+$(BUILD_DIR)/%.sram_bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
+	$(SRAM_BIN) $< $@
+
+$(BUILD_DIR)/%.itcm_bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
+	$(ITCM_BIN) $< $@
 
 $(BUILD_DIR):
 	mkdir $@
