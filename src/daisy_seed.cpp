@@ -125,10 +125,12 @@ void DaisySeed::Init(bool boost)
        || (boot_version == System::BootInfo::Version::LT_v6_0
            && memory == System::MemoryRegion::INTERNAL_FLASH))
     {
-        led.Init(led.GetConfig());
+        led.Init(led_config); // led.GetConfig());
         testpoint.Init(testpoint.GetConfig());
         sdram_handle.Init();
     }
+
+//    led.Init(led_config);
 
     ConfigureAudio();
 
