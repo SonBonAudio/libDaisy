@@ -130,7 +130,7 @@ void DaisySeed::Init(bool boost)
         sdram_handle.Init();
     }
 
-//    led.Init(led_config);
+    led.Init(led_config);
 
     ConfigureAudio();
 
