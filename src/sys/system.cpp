@@ -554,7 +554,7 @@ void System::ConfigureMpu()
     MPU_InitStruct.BaseAddress  = 0x38800000;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
-    // Configure the ITCM section as full access
+    // Configure the ITCM section as Full Access;   (TODO: see why this doesn't work: RO access, enable instruction access
     MPU_InitStruct.Enable = MPU_REGION_ENABLE;
     MPU_InitStruct.Number = MPU_REGION_NUMBER3;  // Choose an appropriate region number
     MPU_InitStruct.BaseAddress = 0x00000000;  // ITCM base address
