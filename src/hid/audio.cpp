@@ -35,6 +35,7 @@ class AudioHandle::Impl
     AudioHandle::Result DeInit();
     AudioHandle::Result Start(AudioHandle::AudioCallback callback);
     AudioHandle::Result Start(AudioHandle::InterleavingAudioCallback callback);
+    AudioHandle::Result StartEx(AudioHandle::AudioCallback callback, AudioHandle::AudioCalcCallback calcb);
     AudioHandle::Result Stop();
     AudioHandle::Result ChangeCallback(AudioHandle::AudioCallback callback);
     AudioHandle::Result
@@ -86,7 +87,7 @@ class AudioHandle::Impl
     static void InternalCallback(int32_t* in, int32_t* out, size_t size);
 
     void *callback_, *interleaved_callback_;
-
+    void *calccb_;
     // Data
     AudioHandle::Config config_;
     SaiHandle           sai1_, sai2_;
@@ -182,8 +183,30 @@ AudioHandle::Impl::Start(AudioHandle::AudioCallback callback)
                    audio_handle.InternalCallback);
     callback_             = (void*)callback;
     interleaved_callback_ = nullptr;
+    calccb_= nullptr;
     return Result::OK;
 }
+
+AudioHandle::Result
+AudioHandle::Impl::StartEx(AudioHandle::AudioCallback callback, AudioHandle::AudioCalcCallback calcb)
+{
+    // Get instance of object
+    if(sai2_.IsInitialized())
+    {
+        // Start stream with no callback. Data will be filled externally.
+        sai2_.StartDma(
+            buff_rx_[1], buff_tx_[1], config_.blocksize * 2 * 2, nullptr);
+    }
+    sai1_.StartDma(buff_rx_[0],
+                   buff_tx_[0],
+                   config_.blocksize * 2 * 2,
+                   audio_handle.InternalCallback);
+    callback_             = (void*)callback;
+    interleaved_callback_ = nullptr;
+    calccb_= (void*)calcb;
+    return Result::OK;
+}
+
 
 AudioHandle::Result
 AudioHandle::Impl::Start(AudioHandle::InterleavingAudioCallback callback)
@@ -195,6 +218,7 @@ AudioHandle::Impl::Start(AudioHandle::InterleavingAudioCallback callback)
                    audio_handle.InternalCallback);
     interleaved_callback_ = (void*)callback;
     callback_             = nullptr;
+    calccb_               = nullptr;
     return Result::OK;
 }
 
@@ -479,6 +503,11 @@ void AudioHandle::Impl::InternalCallback(int32_t* in, int32_t* out, size_t size)
             default: break;
         }
     }
+    if (audio_handle.calccb_)
+    {
+        AudioCalcCallback calccb = (AudioCalcCallback)audio_handle.calccb_;
+        calccb(size / 2);
+    }
 }
 
 // ================================================================
@@ -535,6 +564,12 @@ AudioHandle::Result AudioHandle::Start(AudioCallback callback)
 {
     return pimpl_->Start(callback);
 }
+
+AudioHandle::Result AudioHandle::StartEx(AudioCallback callback, AudioCalcCallback calcb)
+{
+    return pimpl_->StartEx(callback, calcb);
+}
+
 
 AudioHandle::Result AudioHandle::Start(InterleavingAudioCallback callback)
 {

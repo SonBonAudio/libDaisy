@@ -66,7 +66,12 @@ class AudioHandle
                                   OutputBuffer out,
                                   size_t       size);
 
-    /** Interleaving Input buffer
+    /** Type for a Calc-only audio callback, called right after the 'AudioCallback
+     * 
+     */
+    typedef void (*AudioCalcCallback)(size_t       size);
+
+/** Interleaving Input buffer
      ** audio is prepared as { L0, R0, L1, R1, . . . LN, RN }]
      ** this is const, as the user shouldn't modify it
     */
@@ -139,10 +144,14 @@ class AudioHandle
     /** Starts the Audio using the non-interleaving callback. */
     Result Start(AudioCallback callback);
 
+    /** Starts the Audio using the extended non-interleaving callback. */
+    Result StartEx(AudioCallback callback, AudioCalcCallback calcb);
+
     /** Starts the Audio using the interleaving callback. 
      ** For now only two channels are supported via this method. 
      */
     Result Start(InterleavingAudioCallback callback);
+
 
     /** Stop the Audio*/
     Result Stop();

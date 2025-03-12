@@ -180,6 +180,12 @@ void DaisySeed::StartAudio(AudioHandle::AudioCallback cb)
     audio_handle.Start(cb);
 }
 
+void DaisySeed::StartAudioEx(AudioHandle::AudioCallback cb, AudioHandle::AudioCalcCallback calcb /* =nullptr */ )
+{
+    audio_handle.StartEx(cb, calcb);
+}
+
+
 void DaisySeed::ChangeAudioCallback(AudioHandle::InterleavingAudioCallback cb)
 {
     audio_handle.ChangeCallback(cb);

@@ -67,6 +67,8 @@ class DaisySeed
     */
     void StartAudio(AudioHandle::AudioCallback cb);
 
+    void StartAudioEx(AudioHandle::AudioCallback cb, AudioHandle::AudioCalcCallback calcb);
+
     /** Changes to a new interleaved callback
      */
     void ChangeAudioCallback(AudioHandle::InterleavingAudioCallback cb);
