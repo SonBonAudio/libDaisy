@@ -29,7 +29,7 @@ extern "C"
         HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
         // DMA1_Stream5_IRQn and DMA2_Stream4_IRQn interrupt configuration for uart rx and tx
-        HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);
+        HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 1, 0);  // MKS  was 0
         HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
         HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
