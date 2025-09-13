@@ -81,7 +81,8 @@ static void InitHS()
     }
 }
 
-static void DeinitHS()
+// USB XXXX
+void DeinitHS()
 {
     if(USBD_DeInit(&hUsbDeviceHS) != USBD_OK)
     {
@@ -154,6 +155,23 @@ static void UsbErrorHandler()
 {
     while(1) {}
 }
+
+// USB XXXX
+bool UsbIsConnected()
+{
+    return (hUsbDeviceHS.dev_state == USBD_STATE_CONFIGURED);
+}
+
+int UsbGetDevState()
+{
+    return hUsbDeviceHS.dev_state;
+}
+
+//XXXXvoid UsbDeInit()
+//{
+//    USBD_DeInit(&hUsbDeviceHS);
+//    USBD_Init(&hUsbDeviceHS);
+//}
 
 // IRQ Handler
 extern "C"
