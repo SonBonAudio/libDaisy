@@ -167,11 +167,6 @@ int UsbGetDevState()
     return hUsbDeviceHS.dev_state;
 }
 
-//XXXXvoid UsbDeInit()
-//{
-//    USBD_DeInit(&hUsbDeviceHS);
-//    USBD_Init(&hUsbDeviceHS);
-//}
 
 // IRQ Handler
 extern "C"
