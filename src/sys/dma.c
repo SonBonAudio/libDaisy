@@ -13,15 +13,18 @@ extern "C"
         __HAL_RCC_DMA2_CLK_ENABLE();
 
         // DMA interrupt init
-        // DMA1_Stream0_IRQn interrupt configuration
-        HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+        // DMA1_Stream0_IRQn interrupt configuration — SAI1_A (audio RX)
+        HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 1, 0);  // MKS: audio at 1, below toner UART (0)
         HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-        // DMA1_Stream1_IRQn interrupt configuration
-        HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+        // DMA1_Stream1_IRQn interrupt configuration — SAI1_B (audio TX)
+        HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 1, 0);  // MKS: audio at 1, below toner UART (0)
         HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
-        // DMA1_Stream2_IRQn interrupt configuration
-        HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
-        HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
+        // DMA1_Stream2_IRQn interrupt configuration — ADC1 DMA
+        // Disabled: ADC runs in circular DMA mode, we read the buffer directly
+        // via hw.adc.Get().  No callback needed (mux not used).
+        // With OVS_4 this was firing at ~235 kHz and wasting ~24% CPU.
+        //HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
+        //HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
         // DMA1_Stream3_IRQn interrupt configuration
         HAL_NVIC_SetPriority(DMA1_Stream3_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(DMA1_Stream3_IRQn);
@@ -29,7 +32,7 @@ extern "C"
         HAL_NVIC_SetPriority(DMA1_Stream4_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(DMA1_Stream4_IRQn);
         // DMA1_Stream5_IRQn and DMA2_Stream4_IRQn interrupt configuration for uart rx and tx
-        HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 1, 0);  // MKS  was 0
+        HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 0, 0);  // MKS: back to 0 (higher than USB at 1) so toner data doesn't get starved
         HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
         HAL_NVIC_SetPriority(DMA2_Stream4_IRQn, 0, 0);
         HAL_NVIC_EnableIRQ(DMA2_Stream4_IRQn);
