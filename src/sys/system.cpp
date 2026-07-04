@@ -122,7 +122,8 @@ extern "C"
     }
 
     // TODO: Add some real handling to the HardFaultHandler
-    void HardFault_Handler()
+    // (weak so an application can provide its own dumping handler)
+    __attribute__((weak)) void HardFault_Handler()
     {
         // Grab an instance of the SCB so we can `p/x *scb` from the debugger
         SCB_Type* scb = SCB;
