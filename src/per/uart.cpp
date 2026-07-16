@@ -1020,9 +1020,15 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
     }
 }
 
+// Zaero diag: priority-0 IRQ storm counters in backup SRAM (survive RESET;
+// reported + zeroed by the app's breadcrumb boot report; index map lives in
+// ZaeroDaisySeeder.cpp irq_count_names[]).
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+
 // HAL Interrupts.
 void UART_IRQHandler(UartHandler::Impl* handle)
 {
+    ZAERO_IRQ_COUNT(0);  // any UART peripheral IRQ
     HAL_UART_IRQHandler(&handle->huart_);
 
     if(handle->listener_mode_
@@ -1057,6 +1063,7 @@ void HalUartDmaRxStreamCallback(void)
 }
 extern "C" void DMA1_Stream5_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(1);  // UART RX DMA (Toner sensor stream)
     HalUartDmaRxStreamCallback();
 }
 
@@ -1069,6 +1076,7 @@ void HalUartDmaTxStreamCallback(void)
 }
 extern "C" void DMA2_Stream4_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(2);  // UART TX DMA
     HalUartDmaTxStreamCallback();
 }
 

@@ -748,23 +748,30 @@ void halI2CDmaStreamCallback(void)
         HAL_DMA_IRQHandler(&i2c_handles[I2CHandle::Impl::dma_active_peripheral_]
                                 .i2c_dma_tc_handle_);
 }
+// Zaero diag: priority-0 IRQ storm counters (see uart.cpp / ZaeroDaisySeeder.cpp)
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+
 extern "C" void DMA1_Stream6_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(6);  // I2C DMA
     halI2CDmaStreamCallback();
 }
 
 extern "C" void I2C1_EV_IRQHandler()
 {
+    ZAERO_IRQ_COUNT(3);
     HAL_I2C_EV_IRQHandler(&i2c_handles[0].i2c_hal_handle_);
 }
 
 extern "C" void I2C2_EV_IRQHandler()
 {
+    ZAERO_IRQ_COUNT(4);
     HAL_I2C_EV_IRQHandler(&i2c_handles[1].i2c_hal_handle_);
 }
 
 extern "C" void I2C3_EV_IRQHandler()
 {
+    ZAERO_IRQ_COUNT(5);
     HAL_I2C_EV_IRQHandler(&i2c_handles[2].i2c_hal_handle_);
 }
 

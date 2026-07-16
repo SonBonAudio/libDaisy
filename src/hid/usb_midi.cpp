@@ -323,7 +323,13 @@ void MidiUsbTransport::Impl::Parse()
     {
         uint8_t bytes[kBufferSize];
         size_t  i = 0;
-        while(!rx_buffer_.isEmpty())
+        // MKS: bound the drain! The USB IRQ refills the ring WHILE this loop
+        // runs (it gets preempted for ~100 us per 125 us by the audio callback
+        // on heavy patches), so draining "until empty" pushed i past the stack
+        // buffer -- an unbounded stack smash with received bytes. Root cause
+        // of the 2026-07 silent-hang family (Zaero ver 4.6.57 investigation).
+        // Leftover bytes stay in the ring and parse on the next call.
+        while(!rx_buffer_.isEmpty() && i < kBufferSize)
         {
             bytes[i++] = rx_buffer_.Read();
         }

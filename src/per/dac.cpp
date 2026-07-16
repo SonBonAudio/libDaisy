@@ -370,20 +370,26 @@ extern "C" void HAL_DAC_MspDeInit(DAC_HandleTypeDef *hdac)
 // ISRs and event handlers
 // ======================================================================
 
+// Zaero diag: priority-0 IRQ storm counters (see uart.cpp / ZaeroDaisySeeder.cpp)
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+
 extern "C" void DMA2_Stream0_IRQHandler(void)
 {
     // DAC1 Ch1 IRQ Handler
+    ZAERO_IRQ_COUNT(11);
     HAL_DMA_IRQHandler(&dac_handle.hal_dac_dma_[0]);
 }
 
 extern "C" void DMA2_Stream1_IRQHandler(void)
 {
     // DAC1 Ch2 IRQ Handler
+    ZAERO_IRQ_COUNT(12);
     HAL_DMA_IRQHandler(&dac_handle.hal_dac_dma_[1]);
 }
 
 extern "C" void TIM6_DAC_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(13);
     HAL_DAC_IRQHandler(&dac_handle.hal_dac_);
     HAL_TIM_IRQHandler(&dac_handle.hal_tim_);
 }

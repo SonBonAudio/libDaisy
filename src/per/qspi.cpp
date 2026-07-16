@@ -971,6 +971,8 @@ extern "C" void HAL_QSPI_MspDeInit(QSPI_HandleTypeDef* qspiHandle)
 
 extern "C" void QUADSPI_IRQHandler(void)
 {
+    // Zaero diag: priority-0 IRQ storm counter (see uart.cpp / ZaeroDaisySeeder.cpp)
+    (*(volatile uint32_t*)(0x38800F80UL + 4u * 10))++;
     HAL_QSPI_IRQHandler(qspi_impl.GetHalHandle());
 }
 

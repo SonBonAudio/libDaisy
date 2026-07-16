@@ -489,13 +489,18 @@ extern "C" void DMA1_Stream1_IRQHandler(void)
     HAL_DMA_IRQHandler(&sai_handles[0].sai_b_dma_handle_);
 }
 
+// Zaero diag: priority-0 IRQ storm counter (see uart.cpp / ZaeroDaisySeeder.cpp)
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+
 extern "C" void DMA1_Stream3_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(15);  // SAI2 A DMA
     HAL_DMA_IRQHandler(&sai_handles[1].sai_a_dma_handle_);
 }
 
 extern "C" void DMA1_Stream4_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(15);  // SAI2 B DMA
     HAL_DMA_IRQHandler(&sai_handles[1].sai_b_dma_handle_);
 }
 

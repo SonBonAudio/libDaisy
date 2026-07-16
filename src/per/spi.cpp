@@ -1071,28 +1071,36 @@ extern "C" void dsy_spi_global_init()
     SpiHandle::Impl::GlobalInit();
 }
 
+// Zaero diag: priority-0 IRQ storm counters (see uart.cpp / ZaeroDaisySeeder.cpp)
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+
 extern "C" void SPI1_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(9);
     HAL_SPI_IRQHandler(&spi_handles[0].hspi_);
 }
 
 extern "C" void SPI2_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(9);
     HAL_SPI_IRQHandler(&spi_handles[1].hspi_);
 }
 
 extern "C" void SPI3_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(9);
     HAL_SPI_IRQHandler(&spi_handles[2].hspi_);
 }
 
 extern "C" void SPI4_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(9);
     HAL_SPI_IRQHandler(&spi_handles[3].hspi_);
 }
 
 extern "C" void SPI5_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(9);
     HAL_SPI_IRQHandler(&spi_handles[4].hspi_);
 }
 
@@ -1105,6 +1113,7 @@ void HalSpiDmaRxStreamCallback(void)
 }
 extern "C" void DMA2_Stream2_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(7);  // SPI RX DMA (display)
     HalSpiDmaRxStreamCallback();
 }
 void HalSpiDmaTxStreamCallback(void)
@@ -1116,6 +1125,7 @@ void HalSpiDmaTxStreamCallback(void)
 }
 extern "C" void DMA2_Stream3_IRQHandler(void)
 {
+    ZAERO_IRQ_COUNT(8);  // SPI TX DMA (display)
     HalSpiDmaTxStreamCallback();
 }
 
