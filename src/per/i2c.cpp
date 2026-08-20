@@ -514,6 +514,7 @@ I2CHandle::Impl::StartDmaTransmission(uint16_t                       address,
     next_callback_         = callback;
     next_callback_context_ = callback_context;
 
+    __DMB(); // buffer fill must be visible to the DMA before the stream enables
     HAL_StatusTypeDef status;
     if(config_.mode == I2CHandle::Config::Mode::I2C_MASTER)
     {
@@ -586,6 +587,7 @@ I2CHandle::Impl::StartDmaReception(uint16_t                       address,
     next_callback_         = callback;
     next_callback_context_ = callback_context;
 
+    __DMB();
     HAL_StatusTypeDef status;
     if(config_.mode == I2CHandle::Config::Mode::I2C_MASTER)
     {

@@ -516,6 +516,7 @@ SpiHandle::Impl::StartDmaTx(uint8_t*                            buff,
     if(start_callback)
         start_callback(callback_context);
 
+    __DMB(); // buffer fill must be visible to the DMA before the stream enables
     if(HAL_SPI_Transmit_DMA(&hspi_, buff, size) != HAL_OK)
     {
         dma_active_peripheral_ = -1;
@@ -585,6 +586,7 @@ SpiHandle::Impl::StartDmaRx(uint8_t*                            buff,
     if(start_callback)
         start_callback(callback_context);
 
+    __DMB();
     if(HAL_SPI_Receive_DMA(&hspi_, buff, size) != HAL_OK)
     {
         dma_active_peripheral_ = -1;
@@ -657,6 +659,7 @@ SpiHandle::Result SpiHandle::Impl::StartDmaRxTx(
     if(start_callback)
         start_callback(callback_context);
 
+    __DMB();
     if(HAL_SPI_TransmitReceive_DMA(&hspi_, tx_buff, rx_buff, size) != HAL_OK)
     {
         dma_active_peripheral_ = -1;

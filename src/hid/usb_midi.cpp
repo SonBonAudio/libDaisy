@@ -27,7 +27,16 @@ class MidiUsbTransport::Impl
     }
 
     bool RxActive() { return rx_active_; }
-    void FlushRx() { rx_buffer_.Flush(); }
+    void FlushRx()
+    {
+        // Drain via reads instead of RingBuffer::Flush(): Flush() writes the
+        // PRODUCER index from the consumer side, racing the USB IRQ that may
+        // be writing it concurrently (SPSC violation on re-init paths).
+        // Reading only touches read_ptr_, which this side owns. Bounded in
+        // case the producer keeps feeding while we drain.
+        for(size_t i = 0; i < 2 * kBufferSize && !rx_buffer_.isEmpty(); i++)
+            rx_buffer_.ImmediateRead();
+    }
     void Tx(uint8_t* buffer, size_t size);
 
     void UsbToMidi(uint8_t* buffer, uint8_t length);
