@@ -1069,26 +1069,60 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
 // forensics -- names slow-per-entry prio-0 handlers). Reset by app's 'S'.
 volatile uint32_t g_zaero_uart_irq_max_cycles = 0;
 
+// Zaero diag: line-error counters for the listener bypass path (storm
+// forensics). Windowed -- reset by the app's 'S'.
+volatile uint32_t g_zaero_uart_err_count = 0;
+volatile uint32_t g_zaero_uart_err_flags = 0; // OR of USART_ISR PE/FE/NE/ORE seen
+volatile uint32_t g_zaero_uart_irq_max_isr = 0; // ISR flags at entry of the worst-duration entry
+
 void UART_IRQHandler(UartHandler::Impl* handle)
 {
     ZAERO_IRQ_COUNT(0);  // any UART peripheral IRQ
-    uint32_t zaero_t0 = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
-    HAL_UART_IRQHandler(&handle->huart_);
-
-    if(handle->listener_mode_
-       && __HAL_UART_GET_FLAG(&handle->huart_, UART_FLAG_IDLE))
+    uint32_t zaero_t0  = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
+    uint32_t zaero_isr = handle->huart_.Instance->ISR; // latched below if this
+                                                       // entry sets a new max
+    if(handle->listener_mode_)
     {
-        /** find position, and call callback */
-        UART_CheckRxListener(handle);
-        /** Clear IDLE Interrupt flag */
-        handle->huart_.Instance->ICR = UART_FLAG_IDLE;
-        __DSB(); // drain the write before exception return, or the still-
-                 // asserted line re-enters the handler once for nothing (M7
-                 // buffered-store spurious-IRQ pattern)
+        // FULL HAL BYPASS for circular-DMA listeners. HAL_UART_IRQHandler's
+        // error path aborts the transfer and re-inits the entire peripheral
+        // INSIDE this prio-0 IRQ (~51 us measured live on the wedged unit) --
+        // that was the audio-storm mechanism AND the way listeners died
+        // permanently. A circular listener needs none of the HAL's ISR
+        // services: the data rides circular DMA, which runs right through
+        // PE/FE/NE/ORE (DMADisableonRxError=0), so a line error needs only a
+        // write-1-to-clear and a count; IDLE harvesting we already do here.
+        USART_TypeDef* uart = handle->huart_.Instance;
+        uint32_t       isr  = zaero_isr;
+        uint32_t       errs = isr
+                        & (USART_ISR_PE | USART_ISR_FE | USART_ISR_NE
+                           | USART_ISR_ORE);
+        if(errs)
+        {
+            uart->ICR = errs; // ISR and ICR error bits share bit positions
+            g_zaero_uart_err_count++;
+            g_zaero_uart_err_flags |= errs;
+        }
+        if(isr & USART_ISR_IDLE)
+        {
+            /** find position, and call callback */
+            UART_CheckRxListener(handle);
+            /** Clear IDLE Interrupt flag */
+            uart->ICR = USART_ICR_IDLECF;
+        }
+        __DSB(); // drain the ICR write(s) before exception return, or the
+                 // still-asserted line re-enters the handler once for nothing
+                 // (M7 buffered-store spurious-IRQ pattern)
+    }
+    else
+    {
+        HAL_UART_IRQHandler(&handle->huart_);
     }
     uint32_t zaero_dur = (*(volatile uint32_t*)0xE0001004UL) - zaero_t0;
     if(zaero_dur > g_zaero_uart_irq_max_cycles)
+    {
         g_zaero_uart_irq_max_cycles = zaero_dur;
+        g_zaero_uart_irq_max_isr    = zaero_isr;
+    }
 }
 
 extern "C"
