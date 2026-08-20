@@ -1065,9 +1065,14 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
 #define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
 
 // HAL Interrupts.
+// Zaero diag: worst single UART-IRQ-entry duration in DWT cycles (storm
+// forensics -- names slow-per-entry prio-0 handlers). Reset by app's 'S'.
+volatile uint32_t g_zaero_uart_irq_max_cycles = 0;
+
 void UART_IRQHandler(UartHandler::Impl* handle)
 {
     ZAERO_IRQ_COUNT(0);  // any UART peripheral IRQ
+    uint32_t zaero_t0 = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
     HAL_UART_IRQHandler(&handle->huart_);
 
     if(handle->listener_mode_
@@ -1081,6 +1086,9 @@ void UART_IRQHandler(UartHandler::Impl* handle)
                  // asserted line re-enters the handler once for nothing (M7
                  // buffered-store spurious-IRQ pattern)
     }
+    uint32_t zaero_dur = (*(volatile uint32_t*)0xE0001004UL) - zaero_t0;
+    if(zaero_dur > g_zaero_uart_irq_max_cycles)
+        g_zaero_uart_irq_max_cycles = zaero_dur;
 }
 
 extern "C"
