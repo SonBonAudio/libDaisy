@@ -751,7 +751,7 @@ void halI2CDmaStreamCallback(void)
                                 .i2c_dma_tc_handle_);
 }
 // Zaero diag: priority-0 IRQ storm counters (see uart.cpp / ZaeroDaisySeeder.cpp)
-#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x30007F80UL /* 4.6.69: forensics block in RAM_D2_DMA, was backup SRAM */ + 4u * (n)))++)
 
 extern "C" void DMA1_Stream6_IRQHandler(void)
 {

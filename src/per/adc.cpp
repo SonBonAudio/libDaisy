@@ -539,7 +539,7 @@ extern "C"
     // Zaero diag: priority-0 IRQ storm counter (see uart.cpp / ZaeroDaisySeeder.cpp)
     void DMA1_Stream2_IRQHandler(void)
     {
-        (*(volatile uint32_t*)(0x38800F80UL + 4u * 14))++;
+        (*(volatile uint32_t*)(0x30007F80UL + 4u * 14))++;
         HAL_DMA_IRQHandler(&adc.hdma_adc1);
     }
 

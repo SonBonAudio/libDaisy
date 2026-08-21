@@ -1062,7 +1062,7 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
 // Zaero diag: priority-0 IRQ storm counters in backup SRAM (survive RESET;
 // reported + zeroed by the app's breadcrumb boot report; index map lives in
 // ZaeroDaisySeeder.cpp irq_count_names[]).
-#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x38800F80UL + 4u * (n)))++)
+#define ZAERO_IRQ_COUNT(n) ((*(volatile uint32_t*)(0x30007F80UL /* 4.6.69: forensics block in RAM_D2_DMA, was backup SRAM */ + 4u * (n)))++)
 
 // HAL Interrupts.
 // Zaero diag: worst single UART-IRQ-entry duration in DWT cycles (storm
