@@ -1003,8 +1003,12 @@ extern "C" void dsy_uart_global_init()
  *  did, but removes all of the fifo'ing, and replaces it with a user
  *  callback. The MIDI UART Transport is an example of how this might be used.
  */
+extern volatile uint32_t g_zaero_harvest_max_cyc; // defined below w/ dma5 counters
+extern volatile uint32_t g_zaero_uart_rx_bytes;
+
 static void UART_CheckRxListener(UartHandler::Impl* handle)
 {
+    uint32_t zaero_h0 = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
     size_t pos;
     size_t old_pos = handle->circular_rx_last_pos_;
 
@@ -1056,7 +1060,15 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
         {
             handle->circular_rx_last_pos_ = 0;
         }
+        // traffic meter: bytes delivered this harvest (linear or wrapped,
+        // old_pos -> pos modulo the ring covers both callback shapes)
+        g_zaero_uart_rx_bytes
+            += (pos >= old_pos) ? (pos - old_pos)
+                                : (handle->circular_rx_total_size_ - old_pos + pos);
     }
+    uint32_t zaero_hd = (*(volatile uint32_t*)0xE0001004UL) - zaero_h0;
+    if(zaero_hd > g_zaero_harvest_max_cyc)
+        g_zaero_harvest_max_cyc = zaero_hd;
 }
 
 // Zaero diag: priority-0 IRQ storm counters in backup SRAM (survive RESET;
@@ -1152,10 +1164,55 @@ void HalUartDmaRxStreamCallback(void)
             &uart_handles[UartHandler::Impl::dma_active_rx_peripheral_]
                  .hdma_rx_);
 }
+
+// DMA1_Stream5 FULL HAL BYPASS for the circular RX listener (2026-08-24,
+// mirror of the UART-vector bypass). HAL_DMA_IRQHandler costs 10-15
+// peripheral-bus round-trips per entry (duplicate BDMA-alias ISR read, a CR
+// read per flag checked, one IFCR write per flag, more CR reads for DBM/CIRC)
+// plus error paths doing RMW/lock/state machinery at prio 0 -- measured
+// 21-50 us per entry during storms, and it is where wedge #2 was caught
+// crawling. A circular listener needs none of it: ONE ISR read, ONE combined
+// clear, harvest, DSB (~4 bus accesses). Errors are counted, never serviced
+// (circular DMA runs right through TE/FE/DME).
+volatile uint32_t g_zaero_dma5_max_total_cyc   = 0; // worst whole bypass entry
+volatile uint32_t g_zaero_dma5_max_clear_cyc   = 0; // worst ISR-read+clear section
+volatile uint32_t g_zaero_dma5_err_count       = 0;
+volatile uint32_t g_zaero_dma5_err_flags_seen  = 0; // OR of TE/FE/DME S5 bits
+volatile uint32_t g_zaero_dma5_spurious        = 0; // entries with NO S5 flags
+volatile uint32_t g_zaero_harvest_max_cyc      = 0; // worst CheckRxListener (both vectors)
+volatile uint32_t g_zaero_uart_rx_bytes        = 0; // listener bytes delivered (traffic meter)
+
 extern "C" void DMA1_Stream5_IRQHandler(void)
 {
     ZAERO_IRQ_COUNT(1);  // UART RX DMA (Toner sensor stream)
-    HalUartDmaRxStreamCallback();
+    int per = UartHandler::Impl::dma_active_rx_peripheral_;
+    if(per >= 0 && uart_handles[per].listener_mode_)
+    {
+        uint32_t t0  = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
+        uint32_t isr = DMA1->HISR;         // stream 5 flags: HISR bits 6..11
+        DMA1->HIFCR  = 0x3FUL << 6;        // clear ALL S5 flags in one write
+        uint32_t t1  = *(volatile uint32_t*)0xE0001004UL;
+        uint32_t errs
+            = isr & (DMA_HISR_TEIF5 | DMA_HISR_FEIF5 | DMA_HISR_DMEIF5);
+        if(errs)
+        {
+            g_zaero_dma5_err_count++;
+            g_zaero_dma5_err_flags_seen |= errs;
+        }
+        if(isr & (DMA_HISR_HTIF5 | DMA_HISR_TCIF5))
+            UART_CheckRxListener(&uart_handles[per]);
+        else if(!errs)
+            g_zaero_dma5_spurious++;
+        __DSB(); // drain the IFCR write before exception return (M7
+                 // buffered-store spurious re-entry pattern)
+        uint32_t t2 = *(volatile uint32_t*)0xE0001004UL;
+        if(t1 - t0 > g_zaero_dma5_max_clear_cyc)
+            g_zaero_dma5_max_clear_cyc = t1 - t0;
+        if(t2 - t0 > g_zaero_dma5_max_total_cyc)
+            g_zaero_dma5_max_total_cyc = t2 - t0;
+    }
+    else
+        HalUartDmaRxStreamCallback(); // non-listener RX keeps the HAL path
 }
 
 void HalUartDmaTxStreamCallback(void)
