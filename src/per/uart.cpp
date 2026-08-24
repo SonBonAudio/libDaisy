@@ -1075,6 +1075,10 @@ volatile uint32_t g_zaero_uart_err_count = 0;
 volatile uint32_t g_zaero_uart_err_flags = 0; // OR of USART_ISR PE/FE/NE/ORE seen
 volatile uint32_t g_zaero_uart_irq_max_isr = 0; // ISR flags at entry of the worst-duration entry
 
+// Witness pack: TOTAL UART-IRQ time + entry count (storm-window CPU share)
+volatile uint32_t g_zaero_uart_irq_total_cycles = 0;
+volatile uint32_t g_zaero_uart_irq_entry_count  = 0;
+
 void UART_IRQHandler(UartHandler::Impl* handle)
 {
     ZAERO_IRQ_COUNT(0);  // any UART peripheral IRQ
@@ -1118,6 +1122,8 @@ void UART_IRQHandler(UartHandler::Impl* handle)
         HAL_UART_IRQHandler(&handle->huart_);
     }
     uint32_t zaero_dur = (*(volatile uint32_t*)0xE0001004UL) - zaero_t0;
+    g_zaero_uart_irq_total_cycles += zaero_dur;
+    g_zaero_uart_irq_entry_count++;
     if(zaero_dur > g_zaero_uart_irq_max_cycles)
     {
         g_zaero_uart_irq_max_cycles = zaero_dur;
