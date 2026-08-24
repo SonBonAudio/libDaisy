@@ -569,6 +569,45 @@ void System::ConfigureMpu()
     MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
+    // QSPI speculative-access guard (2026-08-24, the QUADSPI-hang root-cause
+    // fix). The QUADSPI memory-mapped window is 256 MB at 0x90000000 but only
+    // 8 MB is real flash. With no MPU region it defaults to Normal/cacheable/
+    // executable memory, so the M7 freely issues SPECULATIVE reads anywhere in
+    // the window -- including beyond the flash size, a documented way to hang
+    // the QUADSPI (SR.BUSY stuck forever, CPU load stalled unhaltably, debug
+    // AP poisoned; captured live via DWT_PCSR + QUADSPI SR, revived via CR
+    // ABORT). An MPU-blocked access is squashed BEFORE any bus transaction is
+    // issued, so:
+    //   Region 4: entire 256 MB window NO ACCESS + execute-never (default deny)
+    //   Region 5: the real 8 MB, cacheable write-through, execute-never
+    //             (higher region number wins on overlap)
+    // Nothing executes from QSPI at runtime (BOOT_SRAM app), so XN is free.
+    MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number           = MPU_REGION_NUMBER4;
+    MPU_InitStruct.BaseAddress      = 0x90000000;
+    MPU_InitStruct.Size             = MPU_REGION_SIZE_256MB;
+    MPU_InitStruct.SubRegionDisable = 0x00;
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;
+    MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+    MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
+    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number           = MPU_REGION_NUMBER5;
+    MPU_InitStruct.BaseAddress      = 0x90000000;
+    MPU_InitStruct.Size             = MPU_REGION_SIZE_8MB;
+    MPU_InitStruct.SubRegionDisable = 0x00;
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;   // TEX0 + C=1,B=0: write-through
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
+    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE; // shareable normal mem is uncached on M7
+    MPU_InitStruct.IsCacheable      = MPU_ACCESS_CACHEABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
     HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 }
 
