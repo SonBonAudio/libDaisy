@@ -369,6 +369,12 @@ UartHandler::Result UartHandler::Impl::InitDma(bool rx, bool tx)
             Error_Handler();
             return UartHandler::Result::ERR;
         }
+        // ES0396 erratum 2.13.2 "DMA stream locked when transferring data
+        // to/from USART/UART": the request-service handshake is defective
+        // under concurrent transfers. ST workaround: set bit 20 of DMA_SxCR
+        // (undocumented "alternative peripheral DMA channel protocol"),
+        // USART/UART-serving streams ONLY.
+        ((DMA_Stream_TypeDef*)hdma_rx_.Instance)->CR |= (1UL << 20);
         __HAL_LINKDMA(&huart_, hdmarx, hdma_rx_);
     }
 
@@ -379,6 +385,8 @@ UartHandler::Result UartHandler::Impl::InitDma(bool rx, bool tx)
             Error_Handler();
             return UartHandler::Result::ERR;
         }
+        // ES0396 2.13.2 workaround (see above)
+        ((DMA_Stream_TypeDef*)hdma_tx_.Instance)->CR |= (1UL << 20);
         __HAL_LINKDMA(&huart_, hdmatx, hdma_tx_);
     }
 
@@ -551,6 +559,12 @@ UartHandler::Impl::DmaListenStart(uint8_t* buff,
 
     if(HAL_DMA_Init(&hdma_rx_) != HAL_OK)
         return UartHandler::Result::ERR;
+    // ES0396 erratum 2.13.2: alternative peripheral DMA channel protocol
+    // (undocumented DMA_SxCR bit 20) for USART/UART-serving streams -- the
+    // stock request handshake can drop services (stream lock) under
+    // concurrent transfers; also the prime silicon suspect for the storm's
+    // 3.7x phantom transfer events (mis-acked requests re-served).
+    ((DMA_Stream_TypeDef*)hdma_rx_.Instance)->CR |= (1UL << 20);
     __HAL_LINKDMA(&huart_, hdmarx, hdma_rx_);
 
     // enable idle interrupts so that TC, HT, and IDLE are triggers
