@@ -1182,9 +1182,15 @@ volatile uint32_t g_zaero_dma5_spurious        = 0; // entries with NO S5 flags
 volatile uint32_t g_zaero_harvest_max_cyc      = 0; // worst CheckRxListener (both vectors)
 volatile uint32_t g_zaero_uart_rx_bytes        = 0; // listener bytes delivered (traffic meter)
 
+// Scope witness (2026-08-25): bracket the toner DMA IRQ on debug GPIO 2
+// (Seed D22). Weak empty default so libDaisy links standalone (MidiBootBis);
+// the app's strong definition (debug_console.cpp) overrides and drives the pin.
+__attribute__((weak)) void DbgSetFlag2(bool state) { (void)state; }
+
 extern "C" void DMA1_Stream5_IRQHandler(void)
 {
     ZAERO_IRQ_COUNT(1);  // UART RX DMA (Toner sensor stream)
+    DbgSetFlag2(true);   // scope: DMA5 IRQ entry (pulse rate = transfer-event rate)
     int per = UartHandler::Impl::dma_active_rx_peripheral_;
     if(per >= 0 && uart_handles[per].listener_mode_)
     {
@@ -1213,6 +1219,7 @@ extern "C" void DMA1_Stream5_IRQHandler(void)
     }
     else
         HalUartDmaRxStreamCallback(); // non-listener RX keeps the HAL path
+    DbgSetFlag2(false);  // scope: DMA5 IRQ exit (pulse width = entry cost)
 }
 
 void HalUartDmaTxStreamCallback(void)
