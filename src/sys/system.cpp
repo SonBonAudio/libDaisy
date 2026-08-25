@@ -536,19 +536,11 @@ void System::ConfigureMpu()
     MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_ENABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
-    // EXPERIMENT 2026-08-25: SDRAM NON-CACHEABLE (was write-back cacheable).
-    // Tests whether the storm's enabling mechanism is the D-cache eviction
-    // machinery (SDRAM write-backs clogging the AXIM's finite outstanding
-    // slots; DSBs waiting on eviction drains -> the per-access tax every
-    // handler pays in-window). Removes ALL cacheline traffic to SDRAM.
-    // COST: reverb/Logger pay full SDRAM latency per access (~+30-40us/block,
-    // baseline lands near the 125us budget -- expect overrun noise). Normal
-    // non-cacheable = TEX1/C0/B0 (NOT TEX0/C0/B1, which is Device type).
-    MPU_InitStruct.IsCacheable  = MPU_ACCESS_NOT_CACHEABLE;
-    MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+    MPU_InitStruct.IsCacheable  = MPU_ACCESS_CACHEABLE;
+    MPU_InitStruct.IsBufferable = MPU_ACCESS_BUFFERABLE;
     MPU_InitStruct.IsShareable  = MPU_ACCESS_NOT_SHAREABLE;
     MPU_InitStruct.Number       = MPU_REGION_NUMBER1;
-    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
     MPU_InitStruct.Size         = MPU_REGION_SIZE_64MB;
     MPU_InitStruct.BaseAddress  = 0xC0000000;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
