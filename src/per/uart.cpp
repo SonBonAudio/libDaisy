@@ -571,7 +571,14 @@ UartHandler::Impl::DmaListenStart(uint8_t* buff,
     __HAL_UART_ENABLE_IT(&huart_, UART_IT_IDLE);
 
     /** cache maintanence to allow memory from cache-able regions  */
-    dsy_dma_invalidate_cache_for_buffer(buff, size);
+    // 2026-08-25: CMOs removed from the listener path, FINAL. The DCIMVAC
+    // wedge is the dominant crash (3 of 6 captured wedge PCs, all at
+    // cachel1_armv7.h:341), it is the UNHALTABLE/AP-consuming flavor, and the
+    // ring is MPU-non-cacheable so the invalidate is architecturally a no-op.
+    // Toner exonerated (scope + instrumentation), so the rollback rationale
+    // is resolved. Without CMOs the residual wedge class is HALTABLE (full
+    // registers/backtrace) -- better survivability AND better autopsies.
+    // dsy_dma_invalidate_cache_for_buffer(buff, size);
     __DMB();
     if(HAL_UART_Receive_DMA(&huart_, buff, size) != HAL_OK)
         return UartHandler::Result::ERR;
@@ -1040,8 +1047,9 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
             /** Typical lineary handling */
             {
                 /** Cache Invalidate */
-                dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos],
-                                                    pos - old_pos);
+                // 2026-08-25: DCIMVAC wedge site -- removed, see DmaListenStart
+                // dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos],
+                //                                     pos - old_pos);
                 handle->circular_rx_callback_(&buffer[old_pos],
                                               pos - old_pos,
                                               handle->circular_rx_context_,
@@ -1055,14 +1063,16 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
             {
                 /** First from old pos to the new end of mem */
                 size_t rx_size = handle->circular_rx_total_size_ - old_pos;
-                dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos], rx_size);
+                // 2026-08-25: DCIMVAC wedge site -- removed, see DmaListenStart
+                // dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos], rx_size);
                 handle->circular_rx_callback_(&buffer[old_pos],
                                               rx_size,
                                               handle->circular_rx_context_,
                                               UartHandler::Result::OK);
 
                 /** then again from beginning to new pos */
-                dsy_dma_invalidate_cache_for_buffer(&buffer[0], pos);
+                // 2026-08-25: DCIMVAC wedge site -- removed, see DmaListenStart
+                // dsy_dma_invalidate_cache_for_buffer(&buffer[0], pos);
                 handle->circular_rx_callback_(&buffer[0],
                                               pos,
                                               handle->circular_rx_context_,
