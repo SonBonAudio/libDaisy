@@ -598,25 +598,28 @@ void System::ConfigureMpu()
     MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
-    // 2026-08-26: region 5 flipped from Normal write-through to DEVICE memory
-    // (TEX=0/C=0/B=1). Normal-cacheable made the real 8 MB a LEGAL speculation
-    // target: caught live on wall power with zero application flash readers --
-    // QUADSPI 100% BUSY, ~100 TOF IRQ/s, a speculation-sustained eternal open
-    // burst that defeats the TCEM timeout (it only closes IDLE bursts). Device
-    // type architecturally forbids speculative access: the window now sees
-    // ONLY explicit reads. Cost: mapped reads are uncached (patch loads at
-    // QSPI pace -- rare, fine); cache invalidates before reads become no-ops.
+    // 2026-08-26: region 5 anti-speculation, take 2. Was Normal-WT-cacheable,
+    // which made the real 8 MB a LEGAL speculation target: caught live on wall
+    // power with zero application flash readers -- QUADSPI 100% BUSY, ~100 TOF
+    // IRQ/s, a speculation-sustained eternal open burst defeating the TCEM
+    // idle timeout. First fix (Device memory) boot-faulted: the image parser
+    // does unaligned reads from the window, and unaligned access to Device
+    // memory ALWAYS faults (CFSR UNALIGNED, confirmed live). Normal
+    // NON-cacheable + XN starves both speculation engines instead -- XN stops
+    // I-side prefetch, non-cacheable stops D-cache linefills/prefetch (the
+    // observed grazing was cache-driven) -- while unaligned reads stay legal.
+    // Cache invalidates before mapped reads become no-ops (nothing cached).
     MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
     MPU_InitStruct.Number           = MPU_REGION_NUMBER5;
     MPU_InitStruct.BaseAddress      = 0x90000000;
     MPU_InitStruct.Size             = MPU_REGION_SIZE_8MB;
     MPU_InitStruct.SubRegionDisable = 0x00;
-    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;   // TEX0 + C=0,B=1: shareable Device
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL1;   // TEX=001 + C=0,B=0: Normal non-cacheable
     MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
     MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
     MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
     MPU_InitStruct.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
-    MPU_InitStruct.IsBufferable     = MPU_ACCESS_BUFFERABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
     // FMC speculative-access guard (2026-08-25). The ARMv7-M DEFAULT map makes
