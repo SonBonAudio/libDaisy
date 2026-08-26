@@ -306,7 +306,15 @@ void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 {
     /* Inform USB library that core enters in suspend Mode. */
     USBD_LL_Suspend((USBD_HandleTypeDef *)hpcd->pData);
-    __HAL_PCD_GATE_PHYCLOCK(hpcd);
+    /* 2026-08-26 ZaeroDaisy wedge fix: DO NOT gate the OTG PHY clock on
+     * suspend. With the PHY clock stopped, ANY access to an OTG register
+     * (MIDI TX attempt, endpoint ops) never completes and parks the D2 AHB
+     * bus -- every later D2-domain access (TIM7/DMA/UART/debug AP) queues
+     * behind it forever: the unhaltable-wedge class. A host PC going to
+     * sleep triggers exactly this. The gating only saves microamps we do
+     * not need; the resume callback's UNGATE stays as a harmless no-op.
+     *   __HAL_PCD_GATE_PHYCLOCK(hpcd);
+     */
     /* Enter in STOP mode. */
     /* USER CODE BEGIN 2 */
     if(hpcd->Init.low_power_enable)
