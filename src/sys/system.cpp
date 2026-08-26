@@ -598,17 +598,25 @@ void System::ConfigureMpu()
     MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
+    // 2026-08-26: region 5 flipped from Normal write-through to DEVICE memory
+    // (TEX=0/C=0/B=1). Normal-cacheable made the real 8 MB a LEGAL speculation
+    // target: caught live on wall power with zero application flash readers --
+    // QUADSPI 100% BUSY, ~100 TOF IRQ/s, a speculation-sustained eternal open
+    // burst that defeats the TCEM timeout (it only closes IDLE bursts). Device
+    // type architecturally forbids speculative access: the window now sees
+    // ONLY explicit reads. Cost: mapped reads are uncached (patch loads at
+    // QSPI pace -- rare, fine); cache invalidates before reads become no-ops.
     MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
     MPU_InitStruct.Number           = MPU_REGION_NUMBER5;
     MPU_InitStruct.BaseAddress      = 0x90000000;
     MPU_InitStruct.Size             = MPU_REGION_SIZE_8MB;
     MPU_InitStruct.SubRegionDisable = 0x00;
-    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;   // TEX0 + C=1,B=0: write-through
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;   // TEX0 + C=0,B=1: shareable Device
     MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
     MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
-    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE; // shareable normal mem is uncached on M7
-    MPU_InitStruct.IsCacheable      = MPU_ACCESS_CACHEABLE;
-    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_BUFFERABLE;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
     // FMC speculative-access guard (2026-08-25). The ARMv7-M DEFAULT map makes
