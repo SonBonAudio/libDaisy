@@ -155,7 +155,14 @@ SdramHandle::Result SdramHandle::DeviceInit()
     HAL_SDRAM_SendCommand(&dsy_sdram.hsdram, &Command, 0x1000);
 
     //HAL_SDRAM_ProgramRefreshRate(hsdram, 0x56A - 20);
-    HAL_SDRAM_ProgramRefreshRate(&dsy_sdram.hsdram, 0x81A - 20);
+    // 2026-08-25 REFRESH FIX: 0x81A-20 = 2054 SDCLK cycles = one refresh per
+    // 17.1 us -- but this part (AS4C16M32MSA, 13 row bits = 8192 rows) needs
+    // 8192 refreshes per 64 ms = one per 7.8 us. The old value (apparently
+    // computed for a 4096-row part at 133 MHz) under-refreshed the array
+    // 2.2x: full refresh every ~140 ms vs the 64 ms spec. DRAM retention is
+    // exponentially temperature-dependent, so marginal cells decay when warm.
+    // Correct: (64 ms / 8192) * 120 MHz - 20 = 917.
+    HAL_SDRAM_ProgramRefreshRate(&dsy_sdram.hsdram, 917);
     return Result::OK;
 }
 

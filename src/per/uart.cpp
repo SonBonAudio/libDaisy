@@ -369,6 +369,12 @@ UartHandler::Result UartHandler::Impl::InitDma(bool rx, bool tx)
             Error_Handler();
             return UartHandler::Result::ERR;
         }
+        // ES0396 erratum 2.13.2 "DMA stream locked when transferring data
+        // to/from USART/UART": the request-service handshake is defective
+        // under concurrent transfers. ST workaround: set bit 20 of DMA_SxCR
+        // (undocumented "alternative peripheral DMA channel protocol"),
+        // USART/UART-serving streams ONLY.
+        ((DMA_Stream_TypeDef*)hdma_rx_.Instance)->CR |= (1UL << 20);
         __HAL_LINKDMA(&huart_, hdmarx, hdma_rx_);
     }
 
@@ -379,6 +385,8 @@ UartHandler::Result UartHandler::Impl::InitDma(bool rx, bool tx)
             Error_Handler();
             return UartHandler::Result::ERR;
         }
+        // ES0396 2.13.2 workaround (see above)
+        ((DMA_Stream_TypeDef*)hdma_tx_.Instance)->CR |= (1UL << 20);
         __HAL_LINKDMA(&huart_, hdmatx, hdma_tx_);
     }
 
@@ -551,13 +559,26 @@ UartHandler::Impl::DmaListenStart(uint8_t* buff,
 
     if(HAL_DMA_Init(&hdma_rx_) != HAL_OK)
         return UartHandler::Result::ERR;
+    // ES0396 erratum 2.13.2: alternative peripheral DMA channel protocol
+    // (undocumented DMA_SxCR bit 20) for USART/UART-serving streams -- the
+    // stock request handshake can drop services (stream lock) under
+    // concurrent transfers; also the prime silicon suspect for the storm's
+    // 3.7x phantom transfer events (mis-acked requests re-served).
+    ((DMA_Stream_TypeDef*)hdma_rx_.Instance)->CR |= (1UL << 20);
     __HAL_LINKDMA(&huart_, hdmarx, hdma_rx_);
 
     // enable idle interrupts so that TC, HT, and IDLE are triggers
     __HAL_UART_ENABLE_IT(&huart_, UART_IT_IDLE);
 
     /** cache maintanence to allow memory from cache-able regions  */
-    dsy_dma_invalidate_cache_for_buffer(buff, size);
+    // 2026-08-25: CMOs removed from the listener path, FINAL. The DCIMVAC
+    // wedge is the dominant crash (3 of 6 captured wedge PCs, all at
+    // cachel1_armv7.h:341), it is the UNHALTABLE/AP-consuming flavor, and the
+    // ring is MPU-non-cacheable so the invalidate is architecturally a no-op.
+    // Toner exonerated (scope + instrumentation), so the rollback rationale
+    // is resolved. Without CMOs the residual wedge class is HALTABLE (full
+    // registers/backtrace) -- better survivability AND better autopsies.
+    // dsy_dma_invalidate_cache_for_buffer(buff, size);
     __DMB();
     if(HAL_UART_Receive_DMA(&huart_, buff, size) != HAL_OK)
         return UartHandler::Result::ERR;
@@ -1003,8 +1024,12 @@ extern "C" void dsy_uart_global_init()
  *  did, but removes all of the fifo'ing, and replaces it with a user
  *  callback. The MIDI UART Transport is an example of how this might be used.
  */
+extern volatile uint32_t g_zaero_harvest_max_cyc; // defined below w/ dma5 counters
+extern volatile uint32_t g_zaero_uart_rx_bytes;
+
 static void UART_CheckRxListener(UartHandler::Impl* handle)
 {
+    uint32_t zaero_h0 = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
     size_t pos;
     size_t old_pos = handle->circular_rx_last_pos_;
 
@@ -1022,8 +1047,9 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
             /** Typical lineary handling */
             {
                 /** Cache Invalidate */
-                dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos],
-                                                    pos - old_pos);
+                // 2026-08-25: DCIMVAC wedge site -- removed, see DmaListenStart
+                // dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos],
+                //                                     pos - old_pos);
                 handle->circular_rx_callback_(&buffer[old_pos],
                                               pos - old_pos,
                                               handle->circular_rx_context_,
@@ -1037,14 +1063,16 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
             {
                 /** First from old pos to the new end of mem */
                 size_t rx_size = handle->circular_rx_total_size_ - old_pos;
-                dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos], rx_size);
+                // 2026-08-25: DCIMVAC wedge site -- removed, see DmaListenStart
+                // dsy_dma_invalidate_cache_for_buffer(&buffer[old_pos], rx_size);
                 handle->circular_rx_callback_(&buffer[old_pos],
                                               rx_size,
                                               handle->circular_rx_context_,
                                               UartHandler::Result::OK);
 
                 /** then again from beginning to new pos */
-                dsy_dma_invalidate_cache_for_buffer(&buffer[0], pos);
+                // 2026-08-25: DCIMVAC wedge site -- removed, see DmaListenStart
+                // dsy_dma_invalidate_cache_for_buffer(&buffer[0], pos);
                 handle->circular_rx_callback_(&buffer[0],
                                               pos,
                                               handle->circular_rx_context_,
@@ -1056,7 +1084,15 @@ static void UART_CheckRxListener(UartHandler::Impl* handle)
         {
             handle->circular_rx_last_pos_ = 0;
         }
+        // traffic meter: bytes delivered this harvest (linear or wrapped,
+        // old_pos -> pos modulo the ring covers both callback shapes)
+        g_zaero_uart_rx_bytes
+            += (pos >= old_pos) ? (pos - old_pos)
+                                : (handle->circular_rx_total_size_ - old_pos + pos);
     }
+    uint32_t zaero_hd = (*(volatile uint32_t*)0xE0001004UL) - zaero_h0;
+    if(zaero_hd > g_zaero_harvest_max_cyc)
+        g_zaero_harvest_max_cyc = zaero_hd;
 }
 
 // Zaero diag: priority-0 IRQ storm counters in backup SRAM (survive RESET;
@@ -1075,11 +1111,7 @@ volatile uint32_t g_zaero_uart_err_count = 0;
 volatile uint32_t g_zaero_uart_err_flags = 0; // OR of USART_ISR PE/FE/NE/ORE seen
 volatile uint32_t g_zaero_uart_irq_max_isr = 0; // ISR flags at entry of the worst-duration entry
 
-// Zaero diag (4.6.76): TOTAL UART-IRQ time + entry count -- the storm's
-// worst-block spans inflate by wall-clock preemption, so the window's total
-// handler time (not just the max entry) is the quantitative witness of how
-// much of a storm is literally UART handler time. Free-running; the app
-// snapshots deltas across a storm window.
+// Witness pack: TOTAL UART-IRQ time + entry count (storm-window CPU share)
 volatile uint32_t g_zaero_uart_irq_total_cycles = 0;
 volatile uint32_t g_zaero_uart_irq_entry_count  = 0;
 
@@ -1156,10 +1188,62 @@ void HalUartDmaRxStreamCallback(void)
             &uart_handles[UartHandler::Impl::dma_active_rx_peripheral_]
                  .hdma_rx_);
 }
+
+// DMA1_Stream5 FULL HAL BYPASS for the circular RX listener (2026-08-24,
+// mirror of the UART-vector bypass). HAL_DMA_IRQHandler costs 10-15
+// peripheral-bus round-trips per entry (duplicate BDMA-alias ISR read, a CR
+// read per flag checked, one IFCR write per flag, more CR reads for DBM/CIRC)
+// plus error paths doing RMW/lock/state machinery at prio 0 -- measured
+// 21-50 us per entry during storms, and it is where wedge #2 was caught
+// crawling. A circular listener needs none of it: ONE ISR read, ONE combined
+// clear, harvest, DSB (~4 bus accesses). Errors are counted, never serviced
+// (circular DMA runs right through TE/FE/DME).
+volatile uint32_t g_zaero_dma5_max_total_cyc   = 0; // worst whole bypass entry
+volatile uint32_t g_zaero_dma5_max_clear_cyc   = 0; // worst ISR-read+clear section
+volatile uint32_t g_zaero_dma5_err_count       = 0;
+volatile uint32_t g_zaero_dma5_err_flags_seen  = 0; // OR of TE/FE/DME S5 bits
+volatile uint32_t g_zaero_dma5_spurious        = 0; // entries with NO S5 flags
+volatile uint32_t g_zaero_harvest_max_cyc      = 0; // worst CheckRxListener (both vectors)
+volatile uint32_t g_zaero_uart_rx_bytes        = 0; // listener bytes delivered (traffic meter)
+
+// Scope witness (2026-08-25): bracket the toner DMA IRQ on debug GPIO 2
+// (Seed D22). Weak empty default so libDaisy links standalone (MidiBootBis);
+// the app's strong definition (debug_console.cpp) overrides and drives the pin.
+__attribute__((weak)) void DbgSetFlag2(bool state) { (void)state; }
+
 extern "C" void DMA1_Stream5_IRQHandler(void)
 {
     ZAERO_IRQ_COUNT(1);  // UART RX DMA (Toner sensor stream)
-    HalUartDmaRxStreamCallback();
+    DbgSetFlag2(true);   // scope: DMA5 IRQ entry (pulse rate = transfer-event rate)
+    int per = UartHandler::Impl::dma_active_rx_peripheral_;
+    if(per >= 0 && uart_handles[per].listener_mode_)
+    {
+        uint32_t t0  = *(volatile uint32_t*)0xE0001004UL; // DWT CYCCNT
+        uint32_t isr = DMA1->HISR;         // stream 5 flags: HISR bits 6..11
+        DMA1->HIFCR  = 0x3FUL << 6;        // clear ALL S5 flags in one write
+        uint32_t t1  = *(volatile uint32_t*)0xE0001004UL;
+        uint32_t errs
+            = isr & (DMA_HISR_TEIF5 | DMA_HISR_FEIF5 | DMA_HISR_DMEIF5);
+        if(errs)
+        {
+            g_zaero_dma5_err_count++;
+            g_zaero_dma5_err_flags_seen |= errs;
+        }
+        if(isr & (DMA_HISR_HTIF5 | DMA_HISR_TCIF5))
+            UART_CheckRxListener(&uart_handles[per]);
+        else if(!errs)
+            g_zaero_dma5_spurious++;
+        __DSB(); // drain the IFCR write before exception return (M7
+                 // buffered-store spurious re-entry pattern)
+        uint32_t t2 = *(volatile uint32_t*)0xE0001004UL;
+        if(t1 - t0 > g_zaero_dma5_max_clear_cyc)
+            g_zaero_dma5_max_clear_cyc = t1 - t0;
+        if(t2 - t0 > g_zaero_dma5_max_total_cyc)
+            g_zaero_dma5_max_total_cyc = t2 - t0;
+    }
+    else
+        HalUartDmaRxStreamCallback(); // non-listener RX keeps the HAL path
+    DbgSetFlag2(false);  // scope: DMA5 IRQ exit (pulse width = entry cost)
 }
 
 void HalUartDmaTxStreamCallback(void)

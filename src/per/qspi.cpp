@@ -665,8 +665,16 @@ QSPIHandle::Result QSPIHandle::Impl::EnableMemoryMappedMode()
     s_command.DataMode = QSPI_DATA_4_LINES;
 
     /* Configure the memory mapped mode */
-    s_mem_mapped_cfg.TimeOutActivation = QSPI_TIMEOUT_COUNTER_DISABLE;
-    s_mem_mapped_cfg.TimeOutPeriod     = 0;
+    // 2026-08-24: enable the mapped-mode timeout counter. With it DISABLED the
+    // controller held the read burst open FOREVER (nCS low, SR.BUSY=1 for the
+    // instrument's whole life -- measured 38379/38379 busy samples at idle):
+    // an eternally-open serial transaction whose chip<->controller byte
+    // framing one glitch could poison unrecoverably (the captured QUADSPI
+    // wedge, fixable only by CR ABORT). With the timeout, nCS auto-releases
+    // after 256 idle QSPI clocks (~2.5 us): every access is a short, clean,
+    // self-contained transaction. Reopen cost ~20 clocks per burst.
+    s_mem_mapped_cfg.TimeOutActivation = QSPI_TIMEOUT_COUNTER_ENABLE;
+    s_mem_mapped_cfg.TimeOutPeriod     = 256;
 
     if(HAL_QSPI_MemoryMapped(&halqspi_, &s_command, &s_mem_mapped_cfg)
        != HAL_OK)

@@ -561,12 +561,92 @@ void System::ConfigureMpu()
     MPU_InitStruct.BaseAddress = 0x00000000;  // ITCM base address
     MPU_InitStruct.Size = MPU_REGION_SIZE_64KB;  // Adjust size as needed
     MPU_InitStruct.SubRegionDisable = 0x00;
-    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL1;
+    // 2026-08-25: was TEX_LEVEL1 -- TEX=001/C=1/B=0 is a RESERVED (UNPREDICTABLE)
+    // attribute encoding in ARMv7-M. TEX=000/C=1/B=0 = write-through, valid.
+    // (Attributes are moot for TCM accesses, but no UNPREDICTABLE encodings.)
+    MPU_InitStruct.TypeExtField = MPU_TEX_LEVEL0;
     MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS; // MPU_REGION_PRIV_RO_URO; // MPU_REGION_FULL_ACCESS;
     MPU_InitStruct.DisableExec = MPU_INSTRUCTION_ACCESS_ENABLE;
     MPU_InitStruct.IsShareable = MPU_ACCESS_NOT_SHAREABLE;
     MPU_InitStruct.IsCacheable = MPU_ACCESS_CACHEABLE;
     MPU_InitStruct.IsBufferable = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // QSPI speculative-access guard (2026-08-24, the QUADSPI-hang root-cause
+    // fix). The QUADSPI memory-mapped window is 256 MB at 0x90000000 but only
+    // 8 MB is real flash. With no MPU region it defaults to Normal/cacheable/
+    // executable memory, so the M7 freely issues SPECULATIVE reads anywhere in
+    // the window -- including beyond the flash size, a documented way to hang
+    // the QUADSPI (SR.BUSY stuck forever, CPU load stalled unhaltably, debug
+    // AP poisoned; captured live via DWT_PCSR + QUADSPI SR, revived via CR
+    // ABORT). An MPU-blocked access is squashed BEFORE any bus transaction is
+    // issued, so:
+    //   Region 4: entire 256 MB window NO ACCESS + execute-never (default deny)
+    //   Region 5: the real 8 MB, cacheable write-through, execute-never
+    //             (higher region number wins on overlap)
+    // Nothing executes from QSPI at runtime (BOOT_SRAM app), so XN is free.
+    MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number           = MPU_REGION_NUMBER4;
+    MPU_InitStruct.BaseAddress      = 0x90000000;
+    MPU_InitStruct.Size             = MPU_REGION_SIZE_256MB;
+    MPU_InitStruct.SubRegionDisable = 0x00;
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;
+    MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+    MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
+    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // 2026-08-26: region 5 anti-speculation, take 2. Was Normal-WT-cacheable,
+    // which made the real 8 MB a LEGAL speculation target: caught live on wall
+    // power with zero application flash readers -- QUADSPI 100% BUSY, ~100 TOF
+    // IRQ/s, a speculation-sustained eternal open burst defeating the TCEM
+    // idle timeout. First fix (Device memory) boot-faulted: the image parser
+    // does unaligned reads from the window, and unaligned access to Device
+    // memory ALWAYS faults (CFSR UNALIGNED, confirmed live). Normal
+    // NON-cacheable + XN starves both speculation engines instead -- XN stops
+    // I-side prefetch, non-cacheable stops D-cache linefills/prefetch (the
+    // observed grazing was cache-driven) -- while unaligned reads stay legal.
+    // Cache invalidates before mapped reads become no-ops (nothing cached).
+    MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number           = MPU_REGION_NUMBER5;
+    MPU_InitStruct.BaseAddress      = 0x90000000;
+    MPU_InitStruct.Size             = MPU_REGION_SIZE_8MB;
+    MPU_InitStruct.SubRegionDisable = 0x00;
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL1;   // TEX=001 + C=0,B=0: Normal non-cacheable
+    MPU_InitStruct.AccessPermission = MPU_REGION_FULL_ACCESS;
+    MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
+    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    // FMC speculative-access guard (2026-08-25). The ARMv7-M DEFAULT map makes
+    // 0x60000000-0x9FFFFFFF ("External RAM") Normal/cacheable/executable, so
+    // the M7 may issue SPECULATIVE reads anywhere in it -- the exact mechanism
+    // that wedged the QUADSPI (regions 4/5 above). The QSPI quarter is guarded;
+    // this closes the other three quarters: FMC NOR/PSRAM banks + reserved
+    // (0x60000000, 512 MB) and FMC NAND (0x80000000, 256 MB). Those banks are
+    // unconfigured, but the FMC that would serve them is the SAME controller
+    // serving the SDRAM -- a speculative read landing there enters the SDRAM's
+    // FMC. No-access + XN squashes the access before any bus transaction.
+    MPU_InitStruct.Enable           = MPU_REGION_ENABLE;
+    MPU_InitStruct.Number           = MPU_REGION_NUMBER6;
+    MPU_InitStruct.BaseAddress      = 0x60000000;
+    MPU_InitStruct.Size             = MPU_REGION_SIZE_512MB;
+    MPU_InitStruct.SubRegionDisable = 0x00;
+    MPU_InitStruct.TypeExtField     = MPU_TEX_LEVEL0;
+    MPU_InitStruct.AccessPermission = MPU_REGION_NO_ACCESS;
+    MPU_InitStruct.DisableExec      = MPU_INSTRUCTION_ACCESS_DISABLE;
+    MPU_InitStruct.IsShareable      = MPU_ACCESS_NOT_SHAREABLE;
+    MPU_InitStruct.IsCacheable      = MPU_ACCESS_NOT_CACHEABLE;
+    MPU_InitStruct.IsBufferable     = MPU_ACCESS_NOT_BUFFERABLE;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
+    MPU_InitStruct.Number      = MPU_REGION_NUMBER7;
+    MPU_InitStruct.BaseAddress = 0x80000000;
+    MPU_InitStruct.Size        = MPU_REGION_SIZE_256MB;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
     HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
