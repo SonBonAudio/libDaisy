@@ -656,25 +656,46 @@ QSPIHandle::Result QSPIHandle::Impl::EnableMemoryMappedMode()
     //s_command.DummyCycles       = IS25LP080D_DUMMY_CYCLES_READ_QUAD;
     s_command.AlternateByteMode  = QSPI_ALTERNATE_BYTES_4_LINES;
     s_command.AlternateBytesSize = QSPI_ALTERNATE_BYTES_8_BITS;
-    s_command.AlternateBytes     = 0x000000A0;
+    // 2026-09-01: self-describing transactions (production hardening). Stock
+    // libDaisy uses 0xA0 + SIOO_INST_ONLY_FIRST_CMD: the 0xA0 mode byte arms
+    // the flash's continuous-read mode and the controller then never re-sends
+    // the instruction, so BOTH sides carry hidden state that must stay in
+    // lockstep across every burst reopen -- and one glitched mode-byte sample
+    // desyncs the framing PERMANENTLY (nothing re-sends the instruction until
+    // the next SetMode full re-init). Mode byte 0x00 + SIOO_EVERY_CMD sends
+    // the complete command on every transaction: zero carried protocol state,
+    // and any glitch-induced desync self-heals within a few transactions.
+    // Cost: 8 extra clocks (~80 ns) per reopened burst -- measured invisible
+    // in this workload (ZOSSTRESS pass times unchanged). Tested NOT to be the
+    // stale-read mechanism (that was the TCEM timeout, below); kept for the
+    // robustness properties alone.
+    s_command.AlternateBytes     = 0x00000000;
     s_command.DummyCycles        = 6;
     s_command.DdrMode            = QSPI_DDR_MODE_DISABLE;
     s_command.DdrHoldHalfCycle   = QSPI_DDR_HHC_ANALOG_DELAY;
-    //s_command.SIOOMode          = QSPI_SIOO_INST_EVERY_CMD;
-    s_command.SIOOMode = QSPI_SIOO_INST_ONLY_FIRST_CMD;
+    s_command.SIOOMode = QSPI_SIOO_INST_EVERY_CMD;
     s_command.DataMode = QSPI_DATA_4_LINES;
 
     /* Configure the memory mapped mode */
-    // 2026-08-24: enable the mapped-mode timeout counter. With it DISABLED the
-    // controller held the read burst open FOREVER (nCS low, SR.BUSY=1 for the
-    // instrument's whole life -- measured 38379/38379 busy samples at idle):
-    // an eternally-open serial transaction whose chip<->controller byte
-    // framing one glitch could poison unrecoverably (the captured QUADSPI
-    // wedge, fixable only by CR ABORT). With the timeout, nCS auto-releases
-    // after 256 idle QSPI clocks (~2.5 us): every access is a short, clean,
-    // self-contained transaction. Reopen cost ~20 clocks per burst.
-    s_mem_mapped_cfg.TimeOutActivation = QSPI_TIMEOUT_COUNTER_ENABLE;
-    s_mem_mapped_cfg.TimeOutPeriod     = 256;
+    // 2026-09-01: timeout counter (TCEM) DISABLED -- final config, not a
+    // bench experiment. History: enabled 2026-08-24 (256 clk ~2.5 us) as
+    // belt-and-braces after the captured QUADSPI wedge, closing each read
+    // burst after idle so no transaction stays open forever. But ZOSSTRESS
+    // (danger console 'z', fw 4.6.88-93) proved each timeout-close risks
+    // serving ONE STALE 8-byte prefetch beat on the next reopen -- data
+    // delivered correct but lagged 8 bytes for a span, ~1 corrupt read per
+    // ~400k closes (~1 per 17 MB read under load). Silent corruption of
+    // patch/master/image reads. Undocumented silicon behavior; not in ES0396
+    // Rev 9. With TCEM disabled: 10+ GB read, zero errors. The wedge the
+    // timeout guarded against was separately root-caused to SPECULATIVE
+    // reads into the window and is properly fixed by the MPU guards
+    // (system.cpp regions 4/5/6, plus 8 for the last-byte erratum 2.4.4),
+    // which stay in force -- and the self-describing transactions above
+    // remove the permanent-desync framing hazard the 08-24 note feared from
+    // an eternally-open burst. Do NOT re-enable TCEM without re-running the
+    // ZOSSTRESS soak.
+    s_mem_mapped_cfg.TimeOutActivation = QSPI_TIMEOUT_COUNTER_DISABLE;
+    s_mem_mapped_cfg.TimeOutPeriod     = 0;
 
     if(HAL_QSPI_MemoryMapped(&halqspi_, &s_command, &s_mem_mapped_cfg)
        != HAL_OK)
