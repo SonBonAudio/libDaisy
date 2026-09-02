@@ -649,6 +649,20 @@ void System::ConfigureMpu()
     MPU_InitStruct.Size        = MPU_REGION_SIZE_256MB;
     HAL_MPU_ConfigRegion(&MPU_InitStruct);
 
+    // ES0396 erratum 2.4.4 guard (2026-09-01): "Memory-mapped read of last
+    // memory byte fails" -- reading the LAST byte of the QUADSPI FSIZE window
+    // always returns 0x00, and a REPEATED read of it stalls the AXI bus
+    // (a hard wedge). Speculation can no longer graze it (region 5 is
+    // non-cacheable + XN), but a demand read -- stray pointer, or a future
+    // reader walking to the very end of the window -- still could. Block the
+    // last 32-byte line of the 8 MB window outright; it is deep in the RFU
+    // area (flash offset 0x7FFFE0), nothing is stored there. Inherits
+    // NO-ACCESS + XN from region 7's struct; higher number beats region 5.
+    MPU_InitStruct.Number      = MPU_REGION_NUMBER8;
+    MPU_InitStruct.BaseAddress = 0x907FFFE0;
+    MPU_InitStruct.Size       = MPU_REGION_SIZE_32B;
+    HAL_MPU_ConfigRegion(&MPU_InitStruct);
+
     HAL_MPU_Enable(MPU_PRIVILEGED_DEFAULT);
 }
 
